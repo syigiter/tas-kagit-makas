@@ -1,6 +1,16 @@
 {
+  "name": "tas-kagit-makas",
+  "version": "1.0.0",
+  "description": "Online Taş-Kağıt-Makas oyunu",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {
-    "express": "^5.2.1",
-    "socket.io": "^4.8.3"
+    "express": "^4.18.2",
+    "socket.io": "^4.7.5"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }
