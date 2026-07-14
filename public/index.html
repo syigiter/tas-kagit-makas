@@ -1,3 +1,4 @@
+cat > public/index.html << 'EOF'
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -50,6 +51,11 @@
         .error { color: #f87171; font-size: 14px; text-align: center; margin: 6px 0; }
         .flex { display: flex; justify-content: space-between; align-items: center; }
         .back-btn { background: none; border: none; color: rgba(255,255,255,0.3); font-size: 14px; cursor: pointer; text-decoration: underline; margin-top: 12px; }
+        .qr-container { text-align: center; padding: 16px 0; }
+        .qr-container #qrcode { display: inline-block; background: #fff; padding: 16px; border-radius: 16px; }
+        .join-loading { text-align: center; padding: 40px 20px; }
+        .join-loading .spinner { font-size: 48px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -81,12 +87,27 @@
                 <span class="status-text">📡 QR ile Davet</span>
                 <button class="back-btn" id="btnBackFromQr">✕ Kapat</button>
             </div>
-            <div style="text-align:center; padding: 16px 0;">
-                <div id="qrcode" style="display:inline-block; background:#fff; padding:16px; border-radius:16px;"></div>
+            <div class="qr-container">
+                <div id="qrcode"></div>
                 <div style="font-size:32px; font-weight:700; letter-spacing:8px; margin:16px 0 6px; color:#fcd34d;" id="qrRoomCode">----</div>
                 <div style="color:rgba(255,255,255,0.4); font-size:13px;">oda kodu</div>
                 <button class="menu-btn primary" id="btnCopyCode" style="margin-top:12px; padding:12px;">📋 Kodu Kopyala</button>
-                <div id="qrStatus" style="text-align:center; color:rgba(255,255,255,0.5); font-size:14px; margin-top:12px;">🔗 Arkadaşını QR okutmaya davet et</div>
+                <div id="qrStatus" style="text-align:center; color:rgba(255,255,255,0.5); font-size:14px; margin-top:12px;">
+                    🔗 Arkadaşın QR okutsun, otomatik katılsın!
+                </div>
+                <div id="qrPlayerStatus" style="text-align:center; color:rgba(255,255,255,0.4); font-size:13px; margin-top:8px;">
+                    👤 1/2 oyuncu
+                </div>
+            </div>
+        </div>
+
+        <!-- BEKLEME EKRANI (QR ile katılanlar için) -->
+        <div class="screen" id="screen-joining">
+            <div class="join-loading">
+                <div class="spinner">🔄</div>
+                <h2 style="margin-top:16px;">Odaya katılıyorsun...</h2>
+                <p style="color:rgba(255,255,255,0.5);">Lütfen bekleyin</p>
+                <div id="joinStatus" style="margin-top:12px; color:#fcd34d;">⏳ Bağlanıyor...</div>
             </div>
         </div>
 
@@ -131,10 +152,12 @@
         let playerIndex = null;
         let targetScore = 3;
         let playerName = '';
+        let isJoining = false;
 
         const screens = {
             home: document.getElementById('screen-home'),
             qr: document.getElementById('screen-qr'),
+            joining: document.getElementById('screen-joining'),
             game: document.getElementById('screen-game')
         };
 
@@ -164,7 +187,8 @@
                 colorLight: '#ffffff'
             });
             document.getElementById('qrRoomCode').textContent = roomCode;
-            document.getElementById('qrStatus').textContent = '🔗 Arkadaşını QR okutmaya davet et';
+            document.getElementById('qrStatus').innerHTML = '🔗 Arkadaşın QR okutsun, otomatik katılsın!';
+            document.getElementById('qrPlayerStatus').innerHTML = '👤 1/2 oyuncu';
             showScreen('qr');
         }
 
@@ -176,9 +200,9 @@
             const code = document.getElementById('qrRoomCode').textContent;
             if (navigator.clipboard) {
                 navigator.clipboard.writeText(code).then(() => {
-                    document.getElementById('qrStatus').textContent = '✅ Kod kopyalandı!';
+                    document.getElementById('qrStatus').innerHTML = '✅ Kod kopyalandı!';
                     setTimeout(() => {
-                        document.getElementById('qrStatus').textContent = '🔗 Arkadaşını QR okutmaya davet et';
+                        document.getElementById('qrStatus').innerHTML = '🔗 Arkadaşın QR okutsun, otomatik katılsın!';
                     }, 2000);
                 });
             } else {
@@ -201,6 +225,11 @@
                 document.getElementById('statusDisplay').innerHTML = '✅ Sunucuya bağlandı!';
                 document.getElementById('homeError').textContent = '';
                 console.log('✅ Bağlantı başarılı');
+                
+                // Eğer katılım bekleniyorsa ve oda kodu varsa
+                if (isJoining && currentRoom) {
+                    socket.emit('joinRoom', { roomCode: currentRoom, playerName: playerName });
+                }
             });
 
             socket.on('connect_error', (err) => {
@@ -226,14 +255,26 @@
                 document.getElementById('gameTargetDisplay').textContent = targetScore;
                 document.getElementById('gameTargetDisplay2').textContent = targetScore;
                 document.getElementById('gameStatus').textContent = '🏠 Odaya katıldın!';
+                isJoining = false;
                 showScreen('game');
                 document.getElementById('gameError').textContent = '';
                 console.log('✅ Odaya katıldın:', roomCode);
+                
+                // Seçim butonlarını aktif et
+                document.querySelectorAll('.choice-btn').forEach(btn => btn.disabled = false);
             });
 
             socket.on('updatePlayers', (players) => {
                 updateGamePlayers(players);
                 console.log('👥 Oyuncular güncellendi:', players.length);
+                
+                // QR ekranındaki oyuncu durumunu güncelle
+                if (document.getElementById('screen-qr').classList.contains('active')) {
+                    document.getElementById('qrPlayerStatus').innerHTML = '👤 ' + players.length + '/2 oyuncu';
+                    if (players.length === 2) {
+                        document.getElementById('qrStatus').innerHTML = '✅ 2 oyuncu hazır! Oyun başlıyor...';
+                    }
+                }
             });
 
             socket.on('gameReady', (msg) => {
@@ -245,6 +286,12 @@
                 document.getElementById('homeError').textContent = '⚠️ ' + msg;
                 setTimeout(() => { document.getElementById('homeError').textContent = ''; }, 4000);
                 console.error('❌ Hata:', msg);
+                
+                // Hata alınırsa bekleme ekranından çık
+                if (document.getElementById('screen-joining').classList.contains('active')) {
+                    showScreen('home');
+                    isJoining = false;
+                }
             });
         }
 
@@ -254,6 +301,15 @@
             const p1 = players[1] || { name: 'Rakip', choice: null };
             document.getElementById('gamePlayer0Name').textContent = p0.name || 'Sen';
             document.getElementById('gamePlayer1Name').textContent = p1.name || 'Rakip';
+            
+            if (players.length === 2) {
+                document.getElementById('gamePlayer1Status').textContent = '✅ Hazır';
+                if (document.getElementById('screen-game').classList.contains('active')) {
+                    document.getElementById('gameStatus').textContent = '🎮 Oyun başlamak üzere!';
+                }
+            } else {
+                document.getElementById('gamePlayer1Status').textContent = '⏳ Bekleniyor...';
+            }
             
             if (p0.choice) {
                 document.getElementById('gamePlayer0Emoji').textContent = getEmoji(p0.choice);
@@ -272,6 +328,30 @@
             return '❓';
         }
 
+        // ---- Odaya Katılma Fonksiyonu ----
+        function joinRoom(roomCode, name) {
+            isJoining = true;
+            playerName = name;
+            currentRoom = roomCode;
+            document.getElementById('joinStatus').textContent = '⏳ Odaya bağlanıyor...';
+            showScreen('joining');
+            
+            connectSocket();
+            // Bağlantı kurulduğunda socket üzerinden katılma isteği gönderilecek
+            // (connect olayında kontrol ediliyor)
+            
+            // Eğer 5 saniye içinde bağlanılmazsa hata göster
+            setTimeout(() => {
+                if (isJoining) {
+                    document.getElementById('joinStatus').textContent = '❌ Bağlantı zaman aşımı! Lütfen tekrar dene.';
+                    setTimeout(() => {
+                        showScreen('home');
+                        isJoining = false;
+                    }, 2000);
+                }
+            }, 8000);
+        }
+
         // ---- Buton Olayları ----
 
         document.getElementById('btnCreateRoom').addEventListener('click', () => {
@@ -286,11 +366,10 @@
             const params = new URLSearchParams(window.location.search);
             const roomFromUrl = params.get('room');
             if (roomFromUrl) {
+                // QR ile gelen arkadaş için otomatik katılım
                 const name = prompt('Adınız ne olsun?', 'Arkadaş');
                 if (!name) return;
-                playerName = name;
-                connectSocket();
-                socket.emit('joinRoom', { roomCode: roomFromUrl, playerName: name });
+                joinRoom(roomFromUrl, name);
                 return;
             }
             document.getElementById('homeError').textContent = '📸 QR okut veya kod gir';
@@ -304,16 +383,36 @@
             }
             const name = prompt('Adınız ne olsun?', 'Arkadaş');
             if (!name) return;
-            playerName = name;
-            connectSocket();
-            socket.emit('joinRoom', { roomCode: code, playerName: name });
+            joinRoom(code, name);
+            document.getElementById('manualRoomCode').value = '';
         });
 
         document.getElementById('btnLeaveGame').addEventListener('click', () => {
             if (confirm('Oyundan ayrılmak istediğine emin misin?')) {
                 showScreen('home');
                 currentRoom = null;
+                isJoining = false;
+                document.querySelectorAll('.choice-btn').forEach(btn => btn.disabled = true);
             }
+        });
+
+        // ---- Seçim Butonları ----
+        document.querySelectorAll('.choice-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                if (!currentRoom || playerIndex === null) {
+                    document.getElementById('gameError').textContent = '⚠️ Önce bir odaya katıl!';
+                    return;
+                }
+                const choice = this.dataset.choice;
+                socket.emit('makeChoice', {
+                    roomCode: currentRoom,
+                    choice: choice,
+                    playerIndex: playerIndex
+                });
+                document.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
+                document.getElementById('gameStatus').textContent = '⏳ Rakip bekleniyor...';
+                console.log('✋ Seçim yapıldı:', choice);
+            });
         });
 
         // ---- URL'den oda kodu kontrolü (QR ile geliş) ----
@@ -322,11 +421,11 @@
             const roomFromUrl = params.get('room');
             if (roomFromUrl && roomFromUrl.length === 4) {
                 setTimeout(() => {
-                    const name = prompt('Adınız ne olsun?', 'Arkadaş');
+                    const name = prompt('QR ile odaya katılıyorsun! Adın ne?', 'Arkadaş');
                     if (name) {
-                        playerName = name;
-                        connectSocket();
-                        socket.emit('joinRoom', { roomCode: roomFromUrl, playerName: name });
+                        joinRoom(roomFromUrl, name);
+                    } else {
+                        showScreen('home');
                     }
                 }, 500);
             }
@@ -335,6 +434,8 @@
         // ---- Bağlantıyı başlat ----
         connectSocket();
         showScreen('home');
+        document.querySelectorAll('.choice-btn').forEach(btn => btn.disabled = true);
     </script>
 </body>
 </html>
+EOF
