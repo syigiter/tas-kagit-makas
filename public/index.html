@@ -1,4 +1,3 @@
-cat > public/index.html << 'EOF'
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -56,6 +55,9 @@ cat > public/index.html << 'EOF'
         .join-loading { text-align: center; padding: 40px 20px; }
         .join-loading .spinner { font-size: 48px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .timer-bar { width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 16px; overflow: hidden; }
+        .timer-bar .fill { height: 100%; background: linear-gradient(90deg, #fcd34d, #f59e0b); border-radius: 2px; animation: timer-progress 15s linear forwards; }
+        @keyframes timer-progress { 0% { width: 100%; } 100% { width: 0%; } }
     </style>
 </head>
 <body>
@@ -101,13 +103,15 @@ cat > public/index.html << 'EOF'
             </div>
         </div>
 
-        <!-- BEKLEME EKRANI (QR ile katılanlar için) -->
+        <!-- BEKLEME EKRANI -->
         <div class="screen" id="screen-joining">
             <div class="join-loading">
                 <div class="spinner">🔄</div>
                 <h2 style="margin-top:16px;">Odaya katılıyorsun...</h2>
-                <p style="color:rgba(255,255,255,0.5);">Lütfen bekleyin</p>
+                <p style="color:rgba(255,255,255,0.5);">Lütfen bekleyin, bağlantı kuruluyor</p>
                 <div id="joinStatus" style="margin-top:12px; color:#fcd34d;">⏳ Bağlanıyor...</div>
+                <div class="timer-bar"><div class="fill"></div></div>
+                <div style="margin-top:8px; font-size:12px; color:rgba(255,255,255,0.3);">15 saniye içinde bağlanılmazsa otomatik iptal</div>
             </div>
         </div>
 
@@ -153,6 +157,7 @@ cat > public/index.html << 'EOF'
         let targetScore = 3;
         let playerName = '';
         let isJoining = false;
+        let joinTimeout = null;
 
         const screens = {
             home: document.getElementById('screen-home'),
@@ -213,7 +218,10 @@ cat > public/index.html << 'EOF'
         function connectSocket() {
             if (!socket) {
                 socket = io({
-                    transports: ['polling', 'websocket']
+                    transports: ['websocket', 'polling'],
+                    timeout: 20000,
+                    reconnectionAttempts: 5,
+                    reconnectionDelay: 1000
                 });
                 setupSocketListeners();
             }
@@ -226,8 +234,8 @@ cat > public/index.html << 'EOF'
                 document.getElementById('homeError').textContent = '';
                 console.log('✅ Bağlantı başarılı');
                 
-                // Eğer katılım bekleniyorsa ve oda kodu varsa
                 if (isJoining && currentRoom) {
+                    document.getElementById('joinStatus').textContent = '✅ Bağlantı kuruldu, odaya katılıyor...';
                     socket.emit('joinRoom', { roomCode: currentRoom, playerName: playerName });
                 }
             });
@@ -256,11 +264,13 @@ cat > public/index.html << 'EOF'
                 document.getElementById('gameTargetDisplay2').textContent = targetScore;
                 document.getElementById('gameStatus').textContent = '🏠 Odaya katıldın!';
                 isJoining = false;
+                if (joinTimeout) {
+                    clearTimeout(joinTimeout);
+                    joinTimeout = null;
+                }
                 showScreen('game');
                 document.getElementById('gameError').textContent = '';
                 console.log('✅ Odaya katıldın:', roomCode);
-                
-                // Seçim butonlarını aktif et
                 document.querySelectorAll('.choice-btn').forEach(btn => btn.disabled = false);
             });
 
@@ -268,7 +278,6 @@ cat > public/index.html << 'EOF'
                 updateGamePlayers(players);
                 console.log('👥 Oyuncular güncellendi:', players.length);
                 
-                // QR ekranındaki oyuncu durumunu güncelle
                 if (document.getElementById('screen-qr').classList.contains('active')) {
                     document.getElementById('qrPlayerStatus').innerHTML = '👤 ' + players.length + '/2 oyuncu';
                     if (players.length === 2) {
@@ -287,10 +296,12 @@ cat > public/index.html << 'EOF'
                 setTimeout(() => { document.getElementById('homeError').textContent = ''; }, 4000);
                 console.error('❌ Hata:', msg);
                 
-                // Hata alınırsa bekleme ekranından çık
                 if (document.getElementById('screen-joining').classList.contains('active')) {
-                    showScreen('home');
-                    isJoining = false;
+                    document.getElementById('joinStatus').textContent = '❌ ' + msg;
+                    setTimeout(() => {
+                        showScreen('home');
+                        isJoining = false;
+                    }, 2000);
                 }
             });
         }
@@ -328,28 +339,35 @@ cat > public/index.html << 'EOF'
             return '❓';
         }
 
-        // ---- Odaya Katılma Fonksiyonu ----
         function joinRoom(roomCode, name) {
             isJoining = true;
             playerName = name;
             currentRoom = roomCode;
-            document.getElementById('joinStatus').textContent = '⏳ Odaya bağlanıyor...';
+            document.getElementById('joinStatus').textContent = '⏳ Bağlanıyor...';
             showScreen('joining');
             
-            connectSocket();
-            // Bağlantı kurulduğunda socket üzerinden katılma isteği gönderilecek
-            // (connect olayında kontrol ediliyor)
-            
-            // Eğer 5 saniye içinde bağlanılmazsa hata göster
+            // Progress bar animasyonu
+            const fillBar = document.querySelector('.timer-bar .fill');
+            fillBar.style.animation = 'none';
             setTimeout(() => {
+                fillBar.style.animation = 'timer-progress 15s linear forwards';
+            }, 10);
+            
+            connectSocket();
+            
+            if (joinTimeout) {
+                clearTimeout(joinTimeout);
+            }
+            joinTimeout = setTimeout(() => {
                 if (isJoining) {
-                    document.getElementById('joinStatus').textContent = '❌ Bağlantı zaman aşımı! Lütfen tekrar dene.';
+                    document.getElementById('joinStatus').textContent = '❌ Bağlantı zaman aşımı! Tekrar deneyin.';
                     setTimeout(() => {
                         showScreen('home');
                         isJoining = false;
+                        joinTimeout = null;
                     }, 2000);
                 }
-            }, 8000);
+            }, 15000);
         }
 
         // ---- Buton Olayları ----
@@ -366,7 +384,6 @@ cat > public/index.html << 'EOF'
             const params = new URLSearchParams(window.location.search);
             const roomFromUrl = params.get('room');
             if (roomFromUrl) {
-                // QR ile gelen arkadaş için otomatik katılım
                 const name = prompt('Adınız ne olsun?', 'Arkadaş');
                 if (!name) return;
                 joinRoom(roomFromUrl, name);
@@ -392,6 +409,10 @@ cat > public/index.html << 'EOF'
                 showScreen('home');
                 currentRoom = null;
                 isJoining = false;
+                if (joinTimeout) {
+                    clearTimeout(joinTimeout);
+                    joinTimeout = null;
+                }
                 document.querySelectorAll('.choice-btn').forEach(btn => btn.disabled = true);
             }
         });
@@ -438,4 +459,3 @@ cat > public/index.html << 'EOF'
     </script>
 </body>
 </html>
-EOF

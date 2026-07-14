@@ -6,12 +6,17 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 
+// Socket.io ayarları - daha hızlı ve güvenilir
 const io = new Server(server, {
     cors: {
         origin: "*",
         methods: ["GET", "POST"]
     },
-    transports: ['polling', 'websocket']
+    transports: ['websocket', 'polling'],  // WebSocket öncelikli
+    pingTimeout: 60000,  // 60 saniye
+    pingInterval: 25000, // 25 saniye
+    connectTimeout: 45000, // 45 saniye bağlantı zaman aşımı
+    allowEIO3: true
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
