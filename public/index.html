@@ -428,7 +428,17 @@
             });
         });
 
-        function connectSocket() { if (!socket) { socket = io(); setupSocketListeners(); } return socket; }
+        function function connectSocket() { 
+   		 if (!socket) { 
+        		socket = io({
+           			 transports: ['polling'],
+           			 reconnectionAttempts: 5,
+           			 timeout: 10000
+       			 }); 
+       			 setupSocketListeners(); 
+  		  } 
+   		 return socket; 
+	}
 
         function fireConfetti() {
             const container = document.getElementById('confettiContainer');
