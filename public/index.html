@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>🎮 Taş-Kağıt-Makas</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
         body {
@@ -219,6 +220,21 @@
             <div id="statusDisplay" class="status-text">✅ Sunucuya bağlandı!</div>
         </div>
 
+        <!-- QR EKRANI -->
+        <div class="screen" id="screen-qr">
+            <div class="flex">
+                <span class="status-text">📡 QR ile Davet</span>
+                <button class="back-btn" id="btnBackFromQr">✕ Kapat</button>
+            </div>
+            <div style="text-align:center; padding: 16px 0;">
+                <div id="qrcode" style="display:inline-block; background:#fff; padding:16px; border-radius:16px;"></div>
+                <div style="font-size:32px; font-weight:700; letter-spacing:8px; margin:16px 0 6px; color:#fcd34d;" id="qrRoomCode">----</div>
+                <div style="color:rgba(255,255,255,0.4); font-size:13px;">oda kodu</div>
+                <button class="menu-btn primary" id="btnCopyCode" style="margin-top:12px; padding:12px;">📋 Kodu Kopyala</button>
+                <div id="qrStatus" style="text-align:center; color:rgba(255,255,255,0.5); font-size:14px; margin-top:12px;">🔗 Arkadaşını QR okutmaya davet et</div>
+            </div>
+        </div>
+
         <!-- OYUN EKRANI -->
         <div class="screen" id="screen-game">
             <div class="flex">
@@ -263,6 +279,7 @@
 
         const screens = {
             home: document.getElementById('screen-home'),
+            qr: document.getElementById('screen-qr'),
             game: document.getElementById('screen-game')
         };
 
@@ -278,6 +295,41 @@
                 btn.classList.add('active');
                 targetScore = parseInt(btn.dataset.target);
             });
+        });
+
+        // QR Kod Oluşturma
+        function generateQR(roomCode) {
+            const qrContainer = document.getElementById('qrcode');
+            qrContainer.innerHTML = '';
+            const url = window.location.origin + '/?room=' + roomCode;
+            new QRCode(qrContainer, {
+                text: url,
+                width: 200,
+                height: 200,
+                colorDark: '#1a1a2e',
+                colorLight: '#ffffff'
+            });
+            document.getElementById('qrRoomCode').textContent = roomCode;
+            document.getElementById('qrStatus').textContent = '🔗 Arkadaşını QR okutmaya davet et';
+            showScreen('qr');
+        }
+
+        document.getElementById('btnBackFromQr').addEventListener('click', () => {
+            showScreen('home');
+        });
+
+        document.getElementById('btnCopyCode').addEventListener('click', () => {
+            const code = document.getElementById('qrRoomCode').textContent;
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(code).then(() => {
+                    document.getElementById('qrStatus').textContent = '✅ Kod kopyalandı!';
+                    setTimeout(() => {
+                        document.getElementById('qrStatus').textContent = '🔗 Arkadaşını QR okutmaya davet et';
+                    }, 2000);
+                });
+            } else {
+                alert('Kod: ' + code);
+            }
         });
 
         function connectSocket() {
@@ -306,7 +358,7 @@
                 document.getElementById('gameTargetDisplay').textContent = targetScore;
                 document.getElementById('gameTargetDisplay2').textContent = targetScore;
                 document.getElementById('gameStatus').textContent = '🏠 Oda: ' + roomCode;
-                showScreen('game');
+                generateQR(roomCode);
                 document.getElementById('gameError').textContent = '';
                 document.getElementById('statusDisplay').innerHTML = '🏠 Oda oluşturuldu: ' + roomCode;
             });
@@ -363,6 +415,20 @@
             socket.emit('createRoom', { playerName: name, targetScore });
         });
 
+        document.getElementById('btnJoinRoom').addEventListener('click', () => {
+            const params = new URLSearchParams(window.location.search);
+            const roomFromUrl = params.get('room');
+            if (roomFromUrl) {
+                const name = prompt('Adınız ne olsun?', 'Arkadaş');
+                if (!name) return;
+                playerName = name;
+                connectSocket();
+                socket.emit('joinRoom', { roomCode: roomFromUrl, playerName: name });
+                return;
+            }
+            document.getElementById('homeError').textContent = '📸 QR okut veya kod gir';
+        });
+
         document.getElementById('btnManualJoin').addEventListener('click', () => {
             const code = document.getElementById('manualRoomCode').value.trim();
             if (code.length !== 4 || !/^\d{4}$/.test(code)) {
@@ -380,6 +446,22 @@
             if (confirm('Oyundan ayrılmak istediğine emin misin?')) {
                 showScreen('home');
                 currentRoom = null;
+            }
+        });
+
+        // URL'den oda kodu kontrolü (QR ile geliş)
+        window.addEventListener('load', () => {
+            const params = new URLSearchParams(window.location.search);
+            const roomFromUrl = params.get('room');
+            if (roomFromUrl && roomFromUrl.length === 4) {
+                setTimeout(() => {
+                    const name = prompt('Adınız ne olsun?', 'Arkadaş');
+                    if (name) {
+                        playerName = name;
+                        connectSocket();
+                        socket.emit('joinRoom', { roomCode: roomFromUrl, playerName: name });
+                    }
+                }, 500);
             }
         });
 
