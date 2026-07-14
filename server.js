@@ -168,7 +168,7 @@ function calculateResult(choice1, choice2) {
     return 'player1';
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Sunucu çalışıyor: http://localhost:${PORT}`);
     console.log(`📱 Mobilden erişim: http://${localIp}:${PORT}`);
